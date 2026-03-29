@@ -1,6 +1,6 @@
 {
   "name": "bull-board-hono",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Lightweight Bull Board dashboard served via Hono.js with multi-Redis support, basic auth, and auto-discovery of queues",
   "license": "MIT",
   "type": "module",
