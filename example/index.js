@@ -1,11 +1,29 @@
 import { Queue, Worker } from "bullmq";
 
-const connection = {
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379", 10),
-  ...(process.env.REDIS_FAMILY ? { family: parseInt(process.env.REDIS_FAMILY, 10) } : {}),
-  ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
-};
+function buildConnection() {
+  const url = process.env.REDIS_URL;
+  if (url) {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname || "localhost",
+      port: parseInt(parsed.port || "6379", 10),
+      ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
+      ...(parsed.username ? { username: decodeURIComponent(parsed.username) } : {}),
+      ...(parsed.pathname.length > 1 ? { db: parseInt(parsed.pathname.slice(1), 10) } : {}),
+      ...(parsed.protocol === "rediss:" ? { tls: {} } : {}),
+      ...(process.env.REDIS_FAMILY ? { family: parseInt(process.env.REDIS_FAMILY, 10) } : {}),
+    };
+  }
+
+  return {
+    host: process.env.REDIS_HOST || "localhost",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    ...(process.env.REDIS_FAMILY ? { family: parseInt(process.env.REDIS_FAMILY, 10) } : {}),
+    ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+  };
+}
+
+const connection = buildConnection();
 
 // --- Queues ---
 
