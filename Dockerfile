@@ -1,5 +1,5 @@
 # Pin Alpine version for reproducible builds
-FROM node:22-alpine3.21 AS builder
+FROM node:24-alpine3.21 AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY src ./src
 RUN npm run build
 
 # --- Production stage ---
-FROM node:22-alpine3.21
+FROM node:24-alpine3.21
 
 WORKDIR /app
 
