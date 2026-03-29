@@ -1,0 +1,33 @@
+{
+  "name": "bull-board-hono",
+  "version": "1.0.0",
+  "description": "Lightweight Bull Board dashboard served via Hono.js with multi-Redis support, basic auth, and auto-discovery of queues",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/",
+    "format": "biome format --write src/"
+  },
+  "dependencies": {
+    "@bull-board/api": "^6.20.6",
+    "@bull-board/hono": "^6.20.6",
+    "@hono/node-server": "^1.13.8",
+    "bullmq": "^5.34.8",
+    "hono": "^4.7.5",
+    "ioredis": "^5.6.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.9",
+    "@types/node": "^22.13.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
