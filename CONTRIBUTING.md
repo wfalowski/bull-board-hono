@@ -27,7 +27,12 @@ npm run dev                   # start dev server with hot reload
    npm run lint
    npm run build
    ```
-4. Commit with a clear message describing *what* and *why*
+4. Commit using [conventional commits](https://www.conventionalcommits.org/):
+   ```bash
+   npm run commit   # interactive prompt
+   # or manually: git commit -m "feat(scope): description"
+   ```
+   The `commit-msg` hook will validate your message format automatically.
 5. Open a pull request against `main`
 
 ## Code style
