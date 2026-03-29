@@ -3,6 +3,8 @@ import { Queue, Worker } from "bullmq";
 const connection = {
   host: process.env.REDIS_HOST || "localhost",
   port: parseInt(process.env.REDIS_PORT || "6379", 10),
+  ...(process.env.REDIS_FAMILY ? { family: parseInt(process.env.REDIS_FAMILY, 10) } : {}),
+  ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
 };
 
 // --- Queues ---

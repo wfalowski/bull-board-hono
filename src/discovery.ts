@@ -38,6 +38,7 @@ export class QueueDiscovery {
         password: instance.password,
         db: instance.db,
         tls: instance.tls ? {} : undefined,
+        family: instance.family || undefined,
         maxRetriesPerRequest: null,
         lazyConnect: true,
         retryStrategy(times) {
@@ -174,6 +175,7 @@ export class QueueDiscovery {
                 password: state.instance.password,
                 db: state.instance.db,
                 tls: state.instance.tls ? {} : undefined,
+                family: state.instance.family || undefined,
                 maxRetriesPerRequest: null,
               },
             });
