@@ -7,9 +7,13 @@ const RedisInstanceSchema = z.object({
   password: z.string().optional(),
   db: z.coerce.number().int().min(0).max(15).optional(),
   tls: z.coerce.boolean().optional(),
-  family: z.coerce.number().int().refine((v) => v === 0 || v === 4 || v === 6, {
-    message: "family must be 0 (auto), 4 (IPv4), or 6 (IPv6)",
-  }).optional(),
+  family: z.coerce
+    .number()
+    .int()
+    .refine((v) => v === 0 || v === 4 || v === 6, {
+      message: "family must be 0 (auto), 4 (IPv4), or 6 (IPv6)",
+    })
+    .optional(),
 });
 
 export type RedisInstance = z.infer<typeof RedisInstanceSchema>;
