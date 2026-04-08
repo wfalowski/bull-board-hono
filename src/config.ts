@@ -27,6 +27,10 @@ const ConfigSchema = z.object({
   redisInstances: z.array(RedisInstanceSchema).min(1),
   queueDiscoveryInterval: z.coerce.number().int().min(1000),
   basePath: z.string().startsWith("/"),
+  rateLimitMax: z.coerce.number().int().min(1),
+  rateLimitWindowMs: z.coerce.number().int().min(1000),
+  requestTimeoutMs: z.coerce.number().int().min(1000),
+  corsOrigin: z.string().optional(),
 });
 
 /**
@@ -117,6 +121,10 @@ export function loadConfig(): Config {
       redisInstances,
       queueDiscoveryInterval: process.env.QUEUE_DISCOVERY_INTERVAL || "10000",
       basePath: process.env.BASE_PATH || "/",
+      rateLimitMax: process.env.RATE_LIMIT_MAX || "100",
+      rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS || "60000",
+      requestTimeoutMs: process.env.REQUEST_TIMEOUT_MS || "30000",
+      corsOrigin: process.env.CORS_ORIGIN || undefined,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

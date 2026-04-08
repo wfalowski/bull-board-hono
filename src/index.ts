@@ -5,24 +5,53 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
+import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
+import { timeout } from "hono/timeout";
 import { loadConfig } from "./config.js";
 import { type DiscoveredQueue, QueueDiscovery } from "./discovery.js";
 import { logger } from "./logger.js";
+import { rateLimiter } from "./middleware/rate-limit.js";
 
 const config = loadConfig();
 const app = new Hono();
 const discovery = new QueueDiscovery(config.redisInstances);
 
-// Health check — reflects actual Redis connectivity
+// Security headers (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, etc.)
+app.use(
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+    },
+  }),
+);
+
+// CORS
+app.use(cors({ origin: config.corsOrigin || "*" }));
+
+// Rate limiting
+app.use(
+  rateLimiter({
+    windowMs: config.rateLimitWindowMs,
+    max: config.rateLimitMax,
+  }),
+);
+
+// Request timeout
+app.use(timeout(config.requestTimeoutMs));
+
+// Health check — reflects actual Redis connectivity (no topology details)
 app.get("/healthz", (c) => {
   const status = discovery.getConnectionStatus();
   const anyConnected = [...status.values()].some((v) => v);
-  const redis = Object.fromEntries(status);
 
   if (!anyConnected) {
-    return c.json({ status: "unhealthy", redis }, 503);
+    return c.json({ status: "unhealthy" }, 503);
   }
-  return c.json({ status: "ok", redis });
+  return c.json({ status: "ok" });
 });
 
 // Basic auth — only if both username and password are set
@@ -35,6 +64,11 @@ if (config.authUsername && config.authPassword) {
     }),
   );
   logger.info("Basic auth enabled");
+} else {
+  logger.warn(
+    "Authentication is NOT configured. Dashboard is publicly accessible. " +
+      "Set AUTH_USERNAME and AUTH_PASSWORD to enable basic auth.",
+  );
 }
 
 const serverAdapter = new HonoAdapter(serveStatic);
@@ -52,21 +86,37 @@ const { setQueues } = createBullBoard({
 
 app.route(config.basePath, serverAdapter.registerPlugin());
 
+// Incremental board sync — only creates/removes adapters for changed queues
+const adapterMap = new Map<string, BullMQAdapter>();
+
 function syncBoard(discovered: DiscoveredQueue[]) {
-  const adapters = discovered.map(
-    (dq) =>
-      new BullMQAdapter(dq.queue, {
-        displayName:
-          config.redisInstances.length > 1
-            ? `[${dq.instanceName}] ${dq.queueName}`
-            : dq.queueName,
-        description:
-          config.redisInstances.length > 1
-            ? `Redis: ${dq.instanceName}`
-            : undefined,
-      }),
-  );
-  setQueues(adapters);
+  const currentKeys = new Set(discovered.map((dq) => dq.key));
+
+  // Remove stale adapters
+  for (const key of adapterMap.keys()) {
+    if (!currentKeys.has(key)) adapterMap.delete(key);
+  }
+
+  // Add new adapters
+  for (const dq of discovered) {
+    if (!adapterMap.has(dq.key)) {
+      adapterMap.set(
+        dq.key,
+        new BullMQAdapter(dq.queue, {
+          displayName:
+            config.redisInstances.length > 1
+              ? `[${dq.instanceName}] ${dq.queueName}`
+              : dq.queueName,
+          description:
+            config.redisInstances.length > 1
+              ? `Redis: ${dq.instanceName}`
+              : undefined,
+        }),
+      );
+    }
+  }
+
+  setQueues([...adapterMap.values()]);
 }
 
 async function main() {
