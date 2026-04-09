@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.2.1](https://github.com/wfalowski/bull-board-hono/compare/v1.2.0...v1.2.1) (2026-04-09)
+
+
+### Refactoring
+
+* separate Redis connections for scanning and queue management in QueueDiscovery ([#6](https://github.com/wfalowski/bull-board-hono/issues/6)) ([faa8d1f](https://github.com/wfalowski/bull-board-hono/commit/faa8d1fa18941fd18ffecee5e307649cadf48be8))
+
 ## [1.2.0](https://github.com/wfalowski/bull-board-hono/compare/v1.1.0...v1.2.0) (2026-04-08)
 
 
