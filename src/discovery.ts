@@ -11,12 +11,31 @@ export interface DiscoveredQueue {
 }
 
 interface InstanceState {
-  redis: IORedis;
+  /** Connection used for SCAN-based queue discovery */
+  scannerRedis: IORedis;
+  /** Shared connection passed to all BullMQ Queue instances */
+  queueRedis: IORedis;
   instance: RedisInstance;
   knownQueues: Map<string, DiscoveredQueue>;
 }
 
 const SCAN_BATCH_SIZE = 100;
+
+function createRedisClient(instance: RedisInstance): IORedis {
+  return new IORedis({
+    host: instance.host,
+    port: instance.port,
+    password: instance.password,
+    db: instance.db,
+    tls: instance.tls ? {} : undefined,
+    family: instance.family || undefined,
+    maxRetriesPerRequest: null,
+    lazyConnect: true,
+    retryStrategy(times) {
+      return Math.min(times * 500, 30_000);
+    },
+  });
+}
 
 export class QueueDiscovery {
   private states: InstanceState[] = [];
@@ -32,54 +51,52 @@ export class QueueDiscovery {
     this.running = true;
 
     this.states = this.instances.map((instance) => {
-      const redis = new IORedis({
-        host: instance.host,
-        port: instance.port,
-        password: instance.password,
-        db: instance.db,
-        tls: instance.tls ? {} : undefined,
-        family: instance.family || undefined,
-        maxRetriesPerRequest: null,
-        lazyConnect: true,
-        retryStrategy(times) {
-          return Math.min(times * 500, 30_000);
-        },
-      });
+      const scannerRedis = createRedisClient(instance);
+      const queueRedis = createRedisClient(instance);
 
       const state: InstanceState = {
-        redis,
+        scannerRedis,
+        queueRedis,
         instance,
         knownQueues: new Map(),
       };
 
-      redis.on("error", (err: Error) => {
-        logger.error(`[${instance.name}] Redis error: ${err.message}`);
-      });
+      for (const redis of [scannerRedis, queueRedis]) {
+        redis.on("error", (err: Error) => {
+          logger.error(`[${instance.name}] Redis error: ${err.message}`);
+        });
 
-      redis.on("close", () => {
+        redis.on("reconnecting", () => {
+          logger.info(`[${instance.name}] Reconnecting to Redis...`);
+        });
+      }
+
+      scannerRedis.on("close", () => {
         logger.warn(
           `[${instance.name}] Redis connection closed, clearing queues`,
         );
         for (const dq of state.knownQueues.values()) {
-          dq.queue.close().catch(() => {});
+          dq.queue.close().catch((err: Error) => {
+            logger.warn(
+              `[${instance.name}] Failed to close queue ${dq.queueName}: ${err.message}`,
+            );
+          });
         }
         state.knownQueues.clear();
-      });
-
-      redis.on("reconnecting", () => {
-        logger.info(`[${instance.name}] Reconnecting to Redis...`);
       });
 
       return state;
     });
 
     await Promise.all(
-      this.states.map((s) =>
-        s.redis.connect().catch((err: Error) => {
-          logger.error(
-            `Failed to connect to Redis "${s.instance.name}" at ${s.instance.host}:${s.instance.port}: ${err.message}`,
-          );
-        }),
+      this.states.flatMap((s) =>
+        [s.scannerRedis, s.queueRedis].map((redis) =>
+          redis.connect().catch((err: Error) => {
+            logger.error(
+              `Failed to connect to Redis "${s.instance.name}" at ${s.instance.host}:${s.instance.port}: ${err.message}`,
+            );
+          }),
+        ),
       ),
     );
 
@@ -106,14 +123,15 @@ export class QueueDiscovery {
     await Promise.all(closePromises);
 
     for (const state of this.states) {
-      state.redis.disconnect();
+      state.scannerRedis.disconnect();
+      state.queueRedis.disconnect();
     }
   }
 
   getConnectionStatus(): Map<string, boolean> {
     const status = new Map<string, boolean>();
     for (const s of this.states) {
-      status.set(s.instance.name, s.redis.status === "ready");
+      status.set(s.instance.name, s.scannerRedis.status === "ready");
     }
     return status;
   }
@@ -146,10 +164,10 @@ export class QueueDiscovery {
     let changed = false;
 
     for (const state of this.states) {
-      if (state.redis.status !== "ready") continue;
+      if (state.scannerRedis.status !== "ready") continue;
 
       try {
-        const queueNames = await this.scanForQueues(state.redis);
+        const queueNames = await this.scanForQueues(state.scannerRedis);
         const currentNames = new Set(queueNames);
 
         // Remove queues that no longer exist
@@ -164,20 +182,12 @@ export class QueueDiscovery {
           }
         }
 
-        // Add newly discovered queues
+        // Add newly discovered queues — share a single Redis connection per instance
         for (const name of queueNames) {
           const key = `${state.instance.name}:${name}`;
           if (!state.knownQueues.has(key)) {
             const queue = new Queue(name, {
-              connection: {
-                host: state.instance.host,
-                port: state.instance.port,
-                password: state.instance.password,
-                db: state.instance.db,
-                tls: state.instance.tls ? {} : undefined,
-                family: state.instance.family || undefined,
-                maxRetriesPerRequest: null,
-              },
+              connection: state.queueRedis,
             });
             state.knownQueues.set(key, {
               key,
