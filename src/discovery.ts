@@ -21,10 +21,25 @@ interface InstanceState {
 
 const SCAN_BATCH_SIZE = 100;
 
+/**
+ * Extract the queue name from a `bull:<queueName>:meta` key, or null if not one.
+ * Keys with extra colons come from a custom BullMQ prefix (`bull:<prefix>:<queue>:meta`);
+ * BullMQ forbids ":" in queue names, so opening them as `<prefix>:<queue>` would throw.
+ * shortcut: custom prefixes are skipped, add a REDIS_PREFIX option if someone needs them
+ */
+export function queueNameFromKey(key: string): string | null {
+  const parts = key.split(":");
+  if (parts.length !== 3 || parts[0] !== "bull" || parts[2] !== "meta") {
+    return null;
+  }
+  return parts[1];
+}
+
 function createRedisClient(instance: RedisInstance): IORedis {
   return new IORedis({
     host: instance.host,
     port: instance.port,
+    username: instance.username,
     password: instance.password,
     db: instance.db,
     tls: instance.tls ? {} : undefined,
@@ -41,6 +56,7 @@ export class QueueDiscovery {
   private states: InstanceState[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
+  private onChange: ((queues: DiscoveredQueue[]) => void) | null = null;
 
   constructor(private instances: RedisInstance[]) {}
 
@@ -49,6 +65,7 @@ export class QueueDiscovery {
     onChange: (queues: DiscoveredQueue[]) => void,
   ): Promise<DiscoveredQueue[]> {
     this.running = true;
+    this.onChange = onChange;
 
     this.states = this.instances.map((instance) => {
       const scannerRedis = createRedisClient(instance);
@@ -72,6 +89,7 @@ export class QueueDiscovery {
       }
 
       scannerRedis.on("close", () => {
+        if (!this.running || state.knownQueues.size === 0) return;
         logger.warn(
           `[${instance.name}] Redis connection closed, clearing queues`,
         );
@@ -83,6 +101,8 @@ export class QueueDiscovery {
           });
         }
         state.knownQueues.clear();
+        // Notify now: discover() skips not-ready instances, so it would report no change
+        this.onChange?.(this.allQueues());
       });
 
       return state;
@@ -131,7 +151,10 @@ export class QueueDiscovery {
   getConnectionStatus(): Map<string, boolean> {
     const status = new Map<string, boolean>();
     for (const s of this.states) {
-      status.set(s.instance.name, s.scannerRedis.status === "ready");
+      status.set(
+        s.instance.name,
+        s.scannerRedis.status === "ready" && s.queueRedis.status === "ready",
+      );
     }
     return status;
   }
@@ -189,6 +212,9 @@ export class QueueDiscovery {
             const queue = new Queue(name, {
               connection: state.queueRedis,
             });
+            // Connection errors are already logged per instance above; without a listener
+            // bullmq falls back to console.error with a raw stack trace per queue
+            queue.on("error", () => {});
             state.knownQueues.set(key, {
               key,
               instanceName: state.instance.name,
@@ -206,9 +232,13 @@ export class QueueDiscovery {
     }
 
     return {
-      queues: this.states.flatMap((s) => [...s.knownQueues.values()]),
+      queues: this.allQueues(),
       changed,
     };
+  }
+
+  private allQueues(): DiscoveredQueue[] {
+    return this.states.flatMap((s) => [...s.knownQueues.values()]);
   }
 
   /**
@@ -231,11 +261,8 @@ export class QueueDiscovery {
       cursor = nextCursor;
 
       for (const key of keys) {
-        const parts = key.split(":");
-        if (parts.length >= 3 && parts[0] === "bull") {
-          const queueName = parts.slice(1, -1).join(":");
-          queueNames.add(queueName);
-        }
+        const queueName = queueNameFromKey(key);
+        if (queueName !== null) queueNames.add(queueName);
       }
     } while (cursor !== "0");
 

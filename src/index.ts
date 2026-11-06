@@ -40,7 +40,7 @@ if (config.authUsername && config.authPassword) {
 const serverAdapter = new HonoAdapter(serveStatic);
 serverAdapter.setBasePath(config.basePath);
 
-const { setQueues } = createBullBoard({
+const { replaceQueues } = createBullBoard({
   queues: [],
   serverAdapter,
   options: {
@@ -56,6 +56,9 @@ function syncBoard(discovered: DiscoveredQueue[]) {
   const adapters = discovered.map(
     (dq) =>
       new BullMQAdapter(dq.queue, {
+        // bull-board keys queues by prefix+name; without this, same-named queues on two instances collapse into one row
+        prefix:
+          config.redisInstances.length > 1 ? `${dq.instanceName}:` : undefined,
         displayName:
           config.redisInstances.length > 1
             ? `[${dq.instanceName}] ${dq.queueName}`
@@ -66,7 +69,8 @@ function syncBoard(discovered: DiscoveredQueue[]) {
             : undefined,
       }),
   );
-  setQueues(adapters);
+  // replaceQueues: setQueues only adds, so removed/closed queues would stay on the board
+  replaceQueues(adapters);
 }
 
 async function main() {
