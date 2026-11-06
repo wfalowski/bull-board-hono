@@ -25,6 +25,9 @@ function buildConnection() {
 
 const connection = buildConnection();
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
 // --- Queues ---
 
 const emailQueue = new Queue("email", { connection });
@@ -114,4 +117,15 @@ new Worker(
   { connection },
 );
 
-console.log("Workers and queues registered. Waiting for jobs...");
+// --- Demo producer: keeps the dashboard populated ---
+
+let n = 0;
+setInterval(async () => {
+  n++;
+  await emailQueue.add("send", { to: `user${n}@example.com`, subject: `Hello #${n}` });
+  await notificationQueue.add("push", { channel: "mobile", message: `Ping #${n}` }, { delay: random(5000, 30000) });
+  if (n % 5 === 0) await reportQueue.add("generate", { type: "monthly" }, { attempts: 2 });
+  if (n % 10 === 0) await healthCheckQueue.add("check", {}, { removeOnComplete: 20 });
+}, 3000);
+
+console.log("Workers and demo producer running. Adding jobs every 3s...");
