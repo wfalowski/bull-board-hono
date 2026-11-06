@@ -4,9 +4,13 @@ const RedisInstanceSchema = z.object({
   name: z.string().min(1),
   host: z.string().min(1).default("localhost"),
   port: z.coerce.number().int().min(1).max(65535).default(6379),
+  username: z.string().optional(),
   password: z.string().optional(),
   db: z.coerce.number().int().min(0).max(15).optional(),
-  tls: z.coerce.boolean().optional(),
+  // Real boolean or number from REDIS_INSTANCES JSON, or an env string ("false" must stay false)
+  tls: z
+    .union([z.boolean(), z.number().transform(Boolean), z.stringbool()])
+    .optional(),
   family: z.coerce
     .number()
     .int()
@@ -29,11 +33,25 @@ const ConfigSchema = z.object({
   basePath: z.string().startsWith("/"),
 });
 
+/** Percent-decode URL userinfo; a literal "%" (as `new URL` leaves it) is kept as-is. */
+function decodeUserinfo(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value) || undefined;
+  } catch {
+    return value || undefined;
+  }
+}
+
 /**
  * Parse a Redis URL into a RedisInstance.
  * Supports: redis[s]://[[username:]password@]host[:port][/db]
+ * Username and password are percent-decoded.
  */
-function parseRedisUrl(url: string, name: string): RedisInstance {
+function parseRedisUrl(
+  url: string,
+  name: string,
+  env: NodeJS.ProcessEnv,
+): RedisInstance {
   const parsed = new URL(url);
   const tls = parsed.protocol === "rediss:";
   const db =
@@ -45,10 +63,11 @@ function parseRedisUrl(url: string, name: string): RedisInstance {
     name,
     host: parsed.hostname || "localhost",
     port: parsed.port || (tls ? "6380" : "6379"),
-    password: parsed.password || undefined,
+    username: decodeUserinfo(parsed.username),
+    password: decodeUserinfo(parsed.password),
     db,
     tls,
-    family: process.env.REDIS_FAMILY || undefined,
+    family: env.REDIS_FAMILY || undefined,
   });
 }
 
@@ -65,10 +84,12 @@ function parseRedisUrl(url: string, name: string): RedisInstance {
  *    REDIS_URL='rediss://redis-host:6380'  (TLS)
  *
  * 3. Individual env vars (default):
- *    REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB, REDIS_TLS
+ *    REDIS_HOST, REDIS_PORT, REDIS_USERNAME, REDIS_PASSWORD, REDIS_DB, REDIS_TLS
  */
-function parseRedisInstances(): RedisInstance[] {
-  const instancesJson = process.env.REDIS_INSTANCES;
+function parseRedisInstances(
+  env: NodeJS.ProcessEnv = process.env,
+): RedisInstance[] {
+  const instancesJson = env.REDIS_INSTANCES;
 
   if (instancesJson) {
     let parsed: unknown;
@@ -88,35 +109,35 @@ function parseRedisInstances(): RedisInstance[] {
     return z.array(RedisInstanceSchema).min(1).parse(parsed);
   }
 
-  const redisUrl = process.env.REDIS_URL;
+  const redisUrl = env.REDIS_URL;
   if (redisUrl) {
-    return [parseRedisUrl(redisUrl, process.env.REDIS_NAME || "default")];
+    return [parseRedisUrl(redisUrl, env.REDIS_NAME || "default", env)];
   }
 
   return [
     RedisInstanceSchema.parse({
-      name: process.env.REDIS_NAME || "default",
-      host: process.env.REDIS_HOST || "localhost",
-      port: process.env.REDIS_PORT || "6379",
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: process.env.REDIS_DB || undefined,
-      tls: process.env.REDIS_TLS || undefined,
-      family: process.env.REDIS_FAMILY || undefined,
+      name: env.REDIS_NAME || "default",
+      host: env.REDIS_HOST || "localhost",
+      port: env.REDIS_PORT || "6379",
+      username: env.REDIS_USERNAME || undefined,
+      password: env.REDIS_PASSWORD || undefined,
+      db: env.REDIS_DB || undefined,
+      tls: env.REDIS_TLS || undefined,
+      family: env.REDIS_FAMILY || undefined,
     }),
   ];
 }
 
-export function loadConfig(): Config {
-  const redisInstances = parseRedisInstances();
-
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   try {
+    const redisInstances = parseRedisInstances(env);
     return ConfigSchema.parse({
-      port: process.env.PORT || "3000",
-      authUsername: process.env.AUTH_USERNAME || undefined,
-      authPassword: process.env.AUTH_PASSWORD || undefined,
+      port: env.PORT || "3000",
+      authUsername: env.AUTH_USERNAME || undefined,
+      authPassword: env.AUTH_PASSWORD || undefined,
       redisInstances,
-      queueDiscoveryInterval: process.env.QUEUE_DISCOVERY_INTERVAL || "10000",
-      basePath: process.env.BASE_PATH || "/",
+      queueDiscoveryInterval: env.QUEUE_DISCOVERY_INTERVAL || "10000",
+      basePath: env.BASE_PATH || "/",
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
