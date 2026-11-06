@@ -4,7 +4,7 @@ Thanks for your interest in contributing!
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker (for local development with Redis)
 
 ## Setup
@@ -29,8 +29,7 @@ npm run dev                   # start dev server with hot reload
    ```
 4. Commit using [conventional commits](https://www.conventionalcommits.org/):
    ```bash
-   npm run commit   # interactive prompt
-   # or manually: git commit -m "feat(scope): description"
+   git commit -m "feat(scope): description"
    ```
    The `commit-msg` hook will validate your message format automatically.
 5. Open a pull request against `main`

@@ -1,17 +1,17 @@
 # Pin Alpine version for reproducible builds
-FROM node:24-alpine3.21 AS builder
+FROM node:26-alpine3.23 AS builder
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
 # --- Production stage ---
-FROM node:24-alpine3.21
+FROM node:26-alpine3.23
 
 WORKDIR /app
 
