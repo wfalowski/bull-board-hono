@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.0.0](https://github.com/wfalowski/bull-board-hono/compare/v1.2.1...v2.0.0) (2026-11-06)
+
+### ⚠ BREAKING CHANGES
+
+* Node.js 22 or newer is required (engines >=22).
+
+* upgrade to bull-board 9, node-server 2 and Node 26, add tests to CI ([47c92c9](https://github.com/wfalowski/bull-board-hono/commit/47c92c96eaa3693e0cb2eefc2011c4acdb63dbe7))
+
+### Bug Fixes
+
+* **config:** treat REDIS_TLS=false as off and decode URL credentials ([2200772](https://github.com/wfalowski/bull-board-hono/commit/2200772ed750bd093a38ede64855befcb6d8a71c))
+* **discovery:** remove closed queues from the board and harden scanning ([9db344a](https://github.com/wfalowski/bull-board-hono/commit/9db344a574e15b6580e66ef60cb9915b247ca734))
+* **example:** define missing sleep/random helpers and add a demo producer ([a9bb300](https://github.com/wfalowski/bull-board-hono/commit/a9bb30088a9fa5849e8de1a9c236d152cc710e97))
+
 ## [1.2.1](https://github.com/wfalowski/bull-board-hono/compare/v1.2.0...v1.2.1) (2026-04-09)
 
 
